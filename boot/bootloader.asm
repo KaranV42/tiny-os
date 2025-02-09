@@ -1,4 +1,4 @@
-bits 16                     ; We are working in 16-bit real mode
+bits 16                     ; 16-bit real mode
 
 start:
     cli                     ; Clear all interrupts
