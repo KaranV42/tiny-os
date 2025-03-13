@@ -1,39 +1,61 @@
-bits 16                     ; 16-bit real mode
+[bits 16] ; Start in 16-bit real mode
 
 start:
-    cli                     ; Clear all interrupts
-    cld                     ; Clear the direction flag (string instructions will increment)
+    cli                                 ; Disable interrupts
+    cld                                 ; Clear direction flag
 
-    xor ax, ax              ; Set AX to 0
-    mov ds, ax              ; Set DS segment register to 0
-    mov es, ax              ; Set ES segment register to 0
-    mov ss, ax              ; Set SS segment register to 0
-    mov sp, 0x7C00          ; Set stack pointer to just below where we're loaded (0x7C00)
+    ; setting up registers
 
-    mov si, hello_msg       ; Load the address of the message into SI
-    call print_string       ; Call our string-printing routine
+    xor ax, ax                          ; Zero out AX register
+    mov cs, ax                          ; Set code segment to zero
+    mov ds, ax                          ; Set data segment to zero
+    mov es, ax                          ; Set extra segment to zero
+    mov ss, ax                          ; Set stack segment to zero (important)
+    mov sp, 0x7C00                      ; Initialize stack
+    jmp 0x0000:$+2                      ; Far jump to reset CS
 
-    hlt                     ; Halt the CPU
+    call enable_a20
+    mov si, hello_msg
+    call print_string
+    hello_msg db 'Hello, World!', 0     ; Null-terminated string
 
-; Function: print_string
-;           Displays a zero-terminated string on the screen using BIOS interrupt
-print_string:
-    lodsb                   ; Load the next byte from string into AL
-    or al, al               ; Check if we've hit the end of the string
-    jz .done                ; If so, we're done
+    jmp $                               ; Infinite loop (halt execution)
 
-    mov ah, 0x0E            ; BIOS teletype function
-    mov bh, 0x00            ; Page number
-    mov bl, 0x07            ; Text attribute (white on black)
-    int 0x10                ; Call BIOS interrupt to print character
+    ;fuction for enabling a20 line
+        enable_a20:
+        cli
+        ;Check if the input buffer is empty.
+            .wait_input:
+                in   al, 0x64           ; Read status from keyboard controller
+                test al, 2              ; Check if input buffer is full
+                jnz  .wait_input        ; If full, wait until it’s empty
+            ;Send command 0xD1 to port 0x64
+                mov  al, 0xD1           ; Command: Write to output port
+                out  0x64, al           ; Send to keyboard controller
+        ;Check if the input buffer is empty.
+            .wait_input2:
+                in   al, 0x64           ; Read status from keyboard controller
+                test al, 2              ; Check if input buffer is full
+                jnz  .wait_input2       ; If full, wait until it’s empty
+            ;Send command 0xDF to port 0x60
+                mov  al, 0xDF           ; Command: Write to output port
+                out  0x60, al           ; Send to keyboard controller
+        ;Re-enable interrupts
+            sti                  
+            ret
+ 
+    ;fuction for printing "hello world"
+        print_string:
+            lodsb                       ; Load next character from [SI] into AL
+            or al, al                   ; Check if null terminator (AL == 0)
+            jz .done                    ; If zero, stop printing
+            mov ah, 0x0E                ; BIOS teletype mode (print character)
+            mov bh, 0x00                ; Page number (default = 0)
+            mov bl, 0x07                ; Text color attribute (white on black)
+            int 0x10                    ; BIOS interrupt to print character
+            jmp print_string            ; Continue printing next character
+            .done:
+                ret                     ; Return to caller
 
-    jmp print_string        ; Loop back to print the next character
-
-.done:
-    ret                     ; Return from the function
-
-; Data section
-hello_msg db 'Hello, World!', 0   ; Null-terminated string
-
-times 510 - ($ - $$) db 0         ; Pad the rest of the sector with zeros
-boot_signature dw 0xAA55          ; Boot signature (required for BIOS to recognize this as bootable)
+times 510-($-$$) db 0                   ; Fill boot sector to 512 bytes
+dw 0xAA55                               ; Boot signature
